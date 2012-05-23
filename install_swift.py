@@ -35,8 +35,8 @@ def run(cmd):
 # =================
 
 preparations_for_apt='''
-add-apt-repository ppa:swift-core/release
-apt-get update
+# add-apt-repository ppa:swift-core/release
+# apt-get update
 '''
 run(preparations_for_apt)
 
@@ -264,10 +264,16 @@ run('''
 mkdir ~/bin
 
 # Check out the swift repo with git clone 
-git clone https://github.com/openstack/swift.git
+# cd ~ ; git clone https://github.com/openstack/swift.git
+cd ~ ; git clone git://192.168.1.200/swift.git
 
 # Build a development installation of swift
-cd ~/swift; sudo python setup.py develop
+# cd ~/swift; python setup.py develop
+cd ~/swift; python setup.py install
+
+#stop all
+swift-init all stop
+
 ''')
 
 # Edit ~/.bashrc
@@ -283,8 +289,7 @@ run('. ~/.bashrc')
 
 
 fp='/etc/swift/proxy-server.conf'
-s='''
-[DEFAULT]
+s='''[DEFAULT]
 bind_port = 8080
 user = swift
 log_facility = LOG_LOCAL1
@@ -406,7 +411,7 @@ for i in range(1, 4+1):
 	fp='/etc/swift/object-server/%d.conf' % i
 	fwrite(s, fp)
 	
-	
+run('swift-init all stop')
 	
 fp='/root/bin/resetswift'
 s='''#!/bin/bash
