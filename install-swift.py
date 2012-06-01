@@ -11,6 +11,9 @@ http://swift.openstack.org/development_saio.html
 
 This script will use a loopback device for storage.
 run this script as root.
+
+Tested under ubuntu 11.10.
+By jadesoul <wslgb2006@gmail.com>
 '''
 
 def fread(path):
@@ -28,15 +31,25 @@ def fappend(s, path):
 	fwrite(s, path, True)
 	
 def run(cmd):
-	print datetime.now(), cmd
-	system(cmd)
+	cmds=cmd.strip().split('\n')
+	for cmd in cmds:
+		cmd=cmd.strip()
+		if not cmd or cmd[0]=='#': continue
+		print '@', datetime.now(), 'CMD:', cmd
+		system(cmd)
 
 # make preparations for apt
 # =================
 
 preparations_for_apt='''
+# seems these are not needed
 # add-apt-repository ppa:swift-core/release
 # apt-get update
+
+
+groupadd swift
+useradd -g swift swift
+usermod -G swift swift
 '''
 run(preparations_for_apt)
 
@@ -103,7 +116,12 @@ mount /mnt/sdb1
 
 mkdir /mnt/sdb1/1 /mnt/sdb1/2 /mnt/sdb1/3 /mnt/sdb1/4
 chown swift:swift /mnt/sdb1/*
-for x in {1..4}; do ln -s /mnt/sdb1/$x /srv/$x; done
+
+ln -fs /mnt/sdb1/1 /srv/1
+ln -fs /mnt/sdb1/2 /srv/2
+ln -fs /mnt/sdb1/3 /srv/3
+ln -fs /mnt/sdb1/4 /srv/4
+
 mkdir -p /etc/swift/object-server /etc/swift/container-server /etc/swift/account-server /srv/1/node/sdb1 /srv/2/node/sdb2 /srv/3/node/sdb3 /srv/4/node/sdb4 /var/run/swift
 chown -R swift:swift /etc/swift /srv/1/ /srv/2/ /srv/3/ /srv/4/ /var/run/swift
 ''')
@@ -116,8 +134,7 @@ exit 0
 '''
 fp='/etc/rc.local'
 s=fread(fp)
-if not before_exit_0 in s: fwrite(s.replace('exit 0', before_exit_0), fp)
-
+if not before_exit_0 in s: fwrite(s.replace('\nexit 0', before_exit_0), fp)
 
 # setting config files
 # ============
@@ -264,16 +281,13 @@ run('''
 mkdir ~/bin
 
 # Check out the swift repo with git clone 
-# cd ~ ; git clone https://github.com/openstack/swift.git
-cd ~ ; git clone git://192.168.1.200/swift.git
+cd ~ ; git clone https://github.com/openstack/swift.git
+# cd ~ ; git clone git://jadesoul-dev/swift.git
+# cd ~ ; tar zxvf swift.tgz
 
 # Build a development installation of swift
-# cd ~/swift; python setup.py develop
-cd ~/swift; python setup.py install
-
-#stop all
-swift-init all stop
-
+# cd ~/swift; python setup.py develop # this would cause bugs
+cd ~/swift; python setup.py install	# this works fine
 ''')
 
 # Edit ~/.bashrc
@@ -285,8 +299,6 @@ export PATH=${PATH}:~/bin
 if not exports in fread(fp): fappend(exports, fp)
 
 run('. ~/.bashrc')
-
-
 
 fp='/etc/swift/proxy-server.conf'
 s='''[DEFAULT]
@@ -470,6 +482,7 @@ swift-init main start
 fwrite(s, fp)
 
 
+
 fp='/root/bin/startrest'
 s='''#!/bin/bash
 
@@ -477,17 +490,89 @@ swift-init rest start
 '''
 fwrite(s, fp)
 
+
+#stop all
+fp='/root/bin/stopall'
+s='''#!/bin/bash
+
+swift-init all stop
+'''
+fwrite(s, fp)
+
+
+fp='/root/bin/pgrepswift'
+s='''#!/bin/bash
+
+ps aux | grep swift
+'''
+fwrite(s, fp)
+
+
+
 run('''
 chmod +x ~/bin/*
-remakerings
+~/bin/remakerings
 cd ~/swift; ./.unittests
-startmain
+~/bin/startmain
+
 cp ~/swift/test/sample.conf /etc/swift/test.conf
-# cd ~/swift; ./.functests
-# cd ~/swift; ./.probetests 
+
 curl -v -H 'X-Storage-User: test:tester' -H 'X-Storage-Pass: testing' http://127.0.0.1:8080/auth/v1.0
+
+# Check that swift works
 swift -A http://127.0.0.1:8080/auth/v1.0 -U test:tester -K testing stat
+
 echo curl -v -H 'X-Auth-Token: <token-from-x-auth-token-above>' <url-from-x-storage-url-above>
+
+# Note: functional tests will first delete everything in the configured accounts
+# cp ~/swift/test/functional/sample.conf /etc/swift/func_test.conf
+# cd ~/swift; ./.functests
+
+# Note: probe tests will reset your environment as they call resetswift for each test
+# cd ~/swift; ./.probetests 
 
 ''')
 
+'''
+# some quick notes
+# Check that swift works
+swift -v -A http://127.0.0.1:8080/auth/v1.0 -U test:tester -K testing stat
+swift -v -A http://127.0.0.1:8080/auth/v1.0 -U test:tester -K testing list images
+swift -v -A http://127.0.0.1:8080/auth/v1.0 -U test:tester -K testing upload images test.data
+swift -v -A http://127.0.0.1:8080/auth/v1.0 -U test:tester -K testing download images test.data
+
+
+
+curl -k -D - -H 'X-Storage-User: test:tester' -H 'X-Storage-Pass: testing' http://127.0.0.1:8080/auth/v1.0
+
+HTTP/1.1 200 OK
+X-Storage-Url: http://127.0.0.1:8080/v1/AUTH_test
+X-Storage-Token: AUTH_tkbf3cb494b8f749b7b34b6d26ac74297b
+X-Auth-Token: AUTH_tkbf3cb494b8f749b7b34b6d26ac74297b
+Content-Length: 0
+Date: Thu, 31 May 2012 15:47:44 GMT
+
+
+curl -k -X HEAD -D -  -H 'X-Auth-Token: AUTH_tkbf3cb494b8f749b7b34b6d26ac74297b' http://127.0.0.1:8080/v1/AUTH_test
+HTTP/1.1 204 No Content
+X-Account-Object-Count: 0
+X-Timestamp: 1338476353.78581
+X-Account-Bytes-Used: 0
+X-Account-Container-Count: 0
+Accept-Ranges: bytes
+Content-Length: 0
+Date: Thu, 31 May 2012 15:49:34 GMT
+
+
+curl -k -X GET -H 'X-Auth-Token: AUTH_tkbf3cb494b8f749b7b34b6d26ac74297b' http://127.0.0.1:8080/v1/AUTH_test/images
+
+curl -k -X GET -H 'X-Auth-Token: AUTH_tkbf3cb494b8f749b7b34b6d26ac74297b' http://127.0.0.1:8080/v1/AUTH_test/images?format=xml
+
+#create container and upload object
+curl -k -X PUT -T ./test.data -H 'Content-Type: text/plain' -H 'X-Auth-Token: AUTH_tkbf3cb494b8f749b7b34b6d26ac74297b' http://127.0.0.1:8080/v1/AUTH_test/images/test.data
+curl -k -X PUT -H 'Content-Type: text/plain' -H 'X-Auth-Token: AUTH_tkbf3cb494b8f749b7b34b6d26ac74297b' http://127.0.0.1:8080/v1/AUTH_test/images
+
+#download object
+curl -k -X GET -H 'X-Auth-Token: AUTH_tkbf3cb494b8f749b7b34b6d26ac74297b' http://127.0.0.1:8080/v1/AUTH_test/images/test.data -o test2.data
+curl -k -X GET -H 'X-Auth-Token: AUTH_tkbf3cb494b8f749b7b34b6d26ac74297b' http://127.0.0.1:8080/v1/AUTH_test/images/.bashrc
+'''
