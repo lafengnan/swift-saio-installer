@@ -83,6 +83,8 @@ python-eventlet
 python-greenlet
 python-pastedeploy
 python-netifaces
+python-dnspython
+python-mock
 '''
 required_packages=[i[:(i+'#').find('#')] for i in required_packages.strip().split('\n')]
 required_packages=[i.strip() for i in required_packages if i.strip()]
@@ -128,6 +130,8 @@ chown -R swift:swift /etc/swift /srv/1/ /srv/2/ /srv/3/ /srv/4/ /var/run/swift
 
 # make these two lines before exit 0
 before_exit_0='''
+mkdir -P /var/cache/swift /var/cache/swift2 /var/cache/swift3 /var/cache/swift4
+chown swift:swift /var/cache/swift*
 mkdir /var/run/swift
 chown swift:swift /var/run/swift
 exit 0
